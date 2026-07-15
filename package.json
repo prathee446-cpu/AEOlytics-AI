@@ -2,6 +2,8 @@
   "name": "aeolytics-ai",
   "version": "1.0.0",
   "scripts": {
+    "postinstall": "cd frontend && npm install",
+    "build": "npm run build --prefix frontend",
     "build:frontend": "npm run build --prefix frontend",
     "build:backend": "npm run build --prefix backend",
     "start": "npm run build:frontend && npm run build:backend && cross-env NODE_ENV=production npm run start --prefix backend",
