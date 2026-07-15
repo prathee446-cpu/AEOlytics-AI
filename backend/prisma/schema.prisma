@@ -1,22 +1,11 @@
-datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
-}
-
 generator client {
   provider = "prisma-client-js"
 }
 
-enum Role {
-  USER
-  ADMIN
-}
-
-enum ArticleStatus {
-  DRAFT
-  PUBLISHED
-  ARCHIVED
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -46,102 +35,100 @@ model Article {
   recommendations Json                  @default("[]")
   embedding       Float[]
   userId          String
-  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
+  auditScores     Json                  @default("{}")
+  author          String?
+  canonicalUrl    String?
+  entities        Json                  @default("[]")
+  importedAt      DateTime?
+  language        String?               @default("en")
+  metaDescription String?
+  ogTags          Json                  @default("{}")
+  optimizerData   Json                  @default("{}")
+  publishDate     String?
+  readingTime     Int?
+  schemas         Json                  @default("[]")
+  sourceDomain    String?
+  sourceUrl       String?
+  wordCount       Int?
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   chatSessions    ChatSession[]
   optimizations   OptimizationHistory[]
-
-  // URL Import & Audit fields
-  sourceUrl       String?
-  sourceDomain    String?
-  importedAt      DateTime?
-  author          String?
-  publishDate     String?
-  language        String?               @default("en")
-  wordCount       Int?
-  readingTime     Int?
-  metaDescription String?
-  canonicalUrl    String?
-  ogTags          Json                  @default("{}")
-  schemas         Json                  @default("[]")
-  entities        Json                  @default("[]")
-  auditScores     Json                  @default("{}")
-  optimizerData   Json                  @default("{}")
 }
 
 model ChatSession {
   id        String        @id @default(uuid())
   title     String
   userId    String
-  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   articleId String?
-  article   Article?      @relation(fields: [articleId], references: [id], onDelete: SetNull)
-  messages  ChatMessage[]
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
+  messages  ChatMessage[]
+  article   Article?      @relation(fields: [articleId], references: [id])
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model ChatMessage {
   id        String      @id @default(uuid())
   sessionId String
-  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  role      String      // "user" or "assistant"
+  role      String
   content   String
   createdAt DateTime    @default(now())
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
 model OptimizationHistory {
   id               String   @id @default(uuid())
   articleId        String
-  article          Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  action           String   // "HEADINGS", "READABILITY", "INTRO", "CONCLUSION", "FAQ", "STRUCTURE"
+  action           String
   previousContent  String
   optimizedContent String
   createdAt        DateTime @default(now())
+  article          Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
 }
 
 model VisibilityScan {
-  id               String            @id @default(uuid())
-  userId           String
-  url              String
-  domain           String
-  visibilityScore  Float             @default(0.0)
-  totalQueries     Int               @default(0)
-  mentionCount     Int               @default(0)
-  mentionPercent   Float             @default(0.0)
-  competitorDomains String[]
-  topCompetitors   Json              @default("[]")  // [{domain, mentions}]
-  avgPosition      Float?
-  scannedAt        DateTime          @default(now())
-  queries          VisibilityQuery[]
-}
-
-model VisibilityQuery {
-  id              String         @id @default(uuid())
-  scanId          String
-  scan            VisibilityScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
-  query           String
-  llmResponse     String         @db.Text
-  mentioned       Boolean        @default(false)
-  mentionPosition Int?           // position in response where brand mentioned (approx paragraph)
-  competitorMentions Json        @default("[]")  // [{domain, count}]
-  queryScore      Float          @default(0.0)
-  createdAt       DateTime       @default(now())
-}
-
-model RadarSession {
-  id                String               @id @default(uuid())
+  id                String            @id @default(uuid())
   userId            String
   url               String
   domain            String
-  engines           String[]             // ["chatgpt", "gemini", "claude", "perplexity"]
+  visibilityScore   Float             @default(0.0)
+  totalQueries      Int               @default(0)
+  mentionCount      Int               @default(0)
+  mentionPercent    Float             @default(0.0)
+  competitorDomains String[]
+  topCompetitors    Json              @default("[]")
+  avgPosition       Float?
+  scannedAt         DateTime          @default(now())
+  queries           VisibilityQuery[]
+}
+
+model VisibilityQuery {
+  id                 String         @id @default(uuid())
+  scanId             String
+  query              String
+  llmResponse        String
+  mentioned          Boolean        @default(false)
+  mentionPosition    Int?
+  competitorMentions Json           @default("[]")
+  queryScore         Float          @default(0.0)
+  createdAt          DateTime       @default(now())
+  scan               VisibilityScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+}
+
+model RadarSession {
+  id                String                @id @default(uuid())
+  userId            String
+  url               String
+  domain            String
+  engines           String[]
   trackedQueries    String[]
   competitorDomains String[]
-  overallScore      Float                @default(0.0)
-  totalChecks       Int                  @default(0)
-  totalMentions     Int                  @default(0)
-  scannedAt         DateTime             @default(now())
+  overallScore      Float                 @default(0.0)
+  totalChecks       Int                   @default(0)
+  totalMentions     Int                   @default(0)
+  scannedAt         DateTime              @default(now())
   results           RadarQueryResult[]
   recommendations   RadarRecommendation[]
 }
@@ -149,33 +136,33 @@ model RadarSession {
 model RadarQueryResult {
   id                 String       @id @default(uuid())
   sessionId          String
-  session            RadarSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   query              String
-  engine             String       // "chatgpt" | "gemini" | "claude" | "perplexity"
+  engine             String
   mentioned          Boolean      @default(false)
   rankPosition       Int?
-  citationStatus     String       @default("none") // "primary" | "secondary" | "none"
+  citationStatus     String       @default("none")
   competitorMentions Json         @default("[]")
-  responseExcerpt    String       @db.Text
+  responseExcerpt    String
   queryScore         Float        @default(0.0)
   createdAt          DateTime     @default(now())
+  session            RadarSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
 model RadarRecommendation {
   id          String       @id @default(uuid())
   sessionId   String
-  session     RadarSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  type        String       // "content" | "schema" | "keyword" | "article"
-  priority    String       @default("medium") // "high" | "medium" | "low"
+  type        String
+  priority    String       @default("medium")
   engine      String?
   title       String
-  description String       @db.Text
+  description String
   createdAt   DateTime     @default(now())
+  session     RadarSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
 model AIActivity {
   id        String   @id @default(uuid())
-  type      String   // "URL_CRAWLED" | "AUDIT_STARTED" | "AUDIT_COMPLETED" | "CONTENT_OPTIMIZED" | "KEYWORDS_FOUND" | "SCHEMA_GENERATED" | "ARTICLE_SAVED" | "REWRITE_COMPLETED" | "EXPORT_REPORT"
+  type      String
   message   String
   details   Json?    @default("{}")
   createdAt DateTime @default(now())
@@ -188,9 +175,20 @@ model VisibilityCompare {
   url2            String
   domain1         String
   domain2         String
-  winnerSummary   Json     // overall, visibility, aeo, seo, content winners
-  metrics         Json     // all metrics comparison table data
-  gapAnalysis     Json     // gap analysis issues
-  recommendations Json     // recommendations generated
+  winnerSummary   Json
+  metrics         Json
+  gapAnalysis     Json
+  recommendations Json
   crawledAt       DateTime @default(now())
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum ArticleStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
 }
