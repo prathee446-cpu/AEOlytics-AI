@@ -4,15 +4,7 @@ import { verifyJWT } from '../middlewares/auth';
 import { AIActivityService } from '../services/ai-activity.service';
 
 export async function aiIntelligenceRoutes(fastify: FastifyInstance) {
-  // ── WEBSOCKET /ws/ai-intelligence ──────────────────────────────────────────
-  fastify.get(
-    '/ws/ai-intelligence',
-    { websocket: true },
-    (connection, req) => {
-      // Register with AIActivityService to receive live events
-      AIActivityService.addClient(connection.socket);
-    }
-  );
+  // WebSocket removed for Serverless compatibility
 
   // Apply JWT middleware to all API routes below
   fastify.addHook('preHandler', verifyJWT);

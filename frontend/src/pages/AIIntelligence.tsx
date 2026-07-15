@@ -93,183 +93,62 @@ export const AIIntelligence: React.FC = () => {
   const cleanupConnection = useCallback(() => {
     if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
     if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
   }, []);
 
   const connectWs = useCallback((attempt: number = 0) => {
     cleanupConnection();
-    setWsStatusWithRef(attempt > 0 ? 'Reconnecting...' : 'Connecting');
+    setWsStatusWithRef('Connected');
     
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-    } catch (err) {
-      setWsStatusWithRef('Disconnected');
-      setDisconnectReason('Invalid WebSocket Endpoint');
-      scheduleReconnect(attempt + 1);
-      return;
-    }
+    setConnectedSince(new Date());
 
-    let pingStart = Date.now();
-
-    ws.onopen = () => {
-      setWsStatusWithRef('Connected');
-      setDisconnectReason('');
-      setReconnectAttempts(0);
-      setConnectedSince(new Date());
-      setWsLatency(Date.now() - pingStart);
-
-      // Start Heartbeat (ping every 10s)
-      pingIntervalRef.current = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          pingStart = Date.now();
-          ws.send(JSON.stringify({ type: 'PING' }));
-          setLastPingTime(new Date());
-          setEventsSentCount(prev => prev + 1);
-        }
-      }, 10000);
-    };
-
-    ws.onmessage = (event) => {
+    // Start HTTP Polling Heartbeat (every 5s) instead of WebSocket
+    pingIntervalRef.current = setInterval(async () => {
+      setLastPingTime(new Date());
+      setEventsSentCount(prev => prev + 1);
+      
+      const start = Date.now();
       try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'PONG') {
-          setLastPongTime(new Date());
-          setWsLatency(Date.now() - pingStart);
-          setEventsReceivedCount(prev => prev + 1);
-        } else if (data.type === 'SYSTEM_STATUS') {
-          setSystemHealth({
-            status: data.serverStatus || 'Operational',
-            activeConnections: data.activeConnections,
-            uptime: data.uptime,
-            latency: Date.now() - pingStart,
-          });
-          setEventsReceivedCount(prev => prev + 1);
-        } else if (data.type === 'REAL_TIME_EVENT' && data.event) {
-          const newEvent = data.event;
-          setLastEventTime(new Date());
-          setEventsReceivedCount(prev => prev + 1);
-          
-          setActivities(prev => {
-            if (prev.some(act => act.id === newEvent.id)) return prev;
-            return [newEvent, ...prev].slice(0, 50);
-          });
-          
-          gsap.fromTo('.live-activity-flash', 
-            { backgroundColor: 'rgba(74, 222, 128, 0.2)' },
-            { backgroundColor: 'transparent', duration: 1 }
-          );
-
-          // Update statistics counters
-          setStats(prev => ({
-            ...prev,
-            eventsProcessed: prev.eventsProcessed + 1,
-            radarScans: newEvent.type === 'RADAR_SCAN_COMPLETE' ? prev.radarScans + 1 : prev.radarScans,
-          }));
-
-          // Update timeline on radar scan completed
-          if (newEvent.type === 'RADAR_SCAN_COMPLETE' && newEvent.details?.domain) {
-            setTimeline(prev => {
-              if (prev.some(item => item.scannedAt === newEvent.createdAt)) return prev;
-              return [...prev, {
-                domain: newEvent.details.domain,
-                overallScore: newEvent.details.overallScore || 0,
-                scannedAt: newEvent.createdAt || newEvent.details.scannedAt || new Date().toISOString(),
-              }].slice(-30);
-            });
-          }
-
-          // Update summary counters on article events
-          if (newEvent.type === 'ARTICLE_PUBLISHED' || newEvent.type === 'DRAFT_SAVED') {
-            const isNew = newEvent.details?.isNew;
-            setSummary((prev: any) => {
-              if (!prev) return prev;
-              let publishedDiff = 0;
-              let draftDiff = 0;
-
-              if (newEvent.type === 'ARTICLE_PUBLISHED') {
-                publishedDiff = 1;
-                draftDiff = isNew ? 0 : -1;
-              } else {
-                draftDiff = 1;
-              }
-
-              const newTotal = prev.totalAssets + (isNew ? 1 : 0);
-              return {
-                ...prev,
-                totalAssets: newTotal,
-                publishedAssets: prev.publishedAssets + publishedDiff,
-                draftAssets: prev.draftAssets + draftDiff,
-              };
-            });
-
-            if (isNew) {
-              setStats(prev => ({ ...prev, articlesManaged: prev.articlesManaged + 1 }));
-            }
-          }
-
-          // Update average scores on audit completed
-          if (newEvent.type === 'AUDIT_COMPLETED' && newEvent.details?.aiScore !== undefined) {
-            setSummary((prev: any) => {
-              if (!prev) return prev;
-              const aiScore = newEvent.details.aiScore;
-              const visibilityScore = newEvent.details.visibilityScore || 0;
-              const prevCount = prev.publishedAssets || 1;
-              return {
-                ...prev,
-                averageAiScore: Math.round((prev.averageAiScore * prevCount + aiScore) / (prevCount + 1)),
-                averageVisibilityScore: Math.round((prev.averageVisibilityScore * prevCount + visibilityScore) / (prevCount + 1)),
-              };
-            });
-          }
+        const [healthRes, actRes] = await Promise.all([
+          api.get('/api/ai-intelligence/system-health'),
+          api.get('/api/ai-intelligence/live-activity')
+        ]);
+        
+        setLastPongTime(new Date());
+        setWsLatency(Date.now() - start);
+        setEventsReceivedCount(prev => prev + 1);
+        
+        if (healthRes.data?.health) {
+          setSystemHealth(healthRes.data.health);
         }
-      } catch (e) {
-        console.error('Failed parsing WS message', e);
-      }
-    };
 
-    ws.onclose = (event) => {
-      setWsStatusWithRef('Disconnected');
-      setConnectedSince(null);
-      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
-      
-      let reason = 'Backend Offline';
-      if (event.code === 1006) {
-        reason = 'Backend Offline';
-      } else if (event.code === 1008) {
-        reason = 'Authentication Failed';
-      } else if (event.code === 1011) {
-        reason = 'Server Error';
-      } else if (event.reason) {
-        reason = event.reason;
+        if (actRes.data?.activities && Array.isArray(actRes.data.activities)) {
+          setActivities(prev => {
+            const newActivities = actRes.data.activities.filter((incoming: any) => !prev.some(p => p.id === incoming.id));
+            if (newActivities.length > 0) {
+              setLastEventTime(new Date());
+              setEventsReceivedCount(c => c + newActivities.length);
+              gsap.fromTo('.live-activity-flash', 
+                { backgroundColor: 'rgba(74, 222, 128, 0.2)' },
+                { backgroundColor: 'transparent', duration: 1 }
+              );
+              // Update stats
+              setStats(s => ({
+                ...s,
+                eventsProcessed: s.eventsProcessed + newActivities.length,
+                radarScans: s.radarScans + newActivities.filter((a: any) => a.type === 'RADAR_SCAN_COMPLETE').length
+              }));
+              return [...newActivities, ...prev].slice(0, 50);
+            }
+            return prev;
+          });
+        }
+      } catch (err) {
+        setWsStatusWithRef('Disconnected');
+        setDisconnectReason('Backend Offline');
+        scheduleReconnect(attempt + 1);
       }
-
-      if (wsStatusRef.current === 'Connecting' || wsStatusRef.current === 'Reconnecting...') {
-        reason = 'Connection Refused';
-      }
-
-      if (!navigator.onLine) {
-        reason = 'Network Error';
-      }
-      
-      setDisconnectReason(reason);
-      scheduleReconnect(attempt + 1);
-    };
-
-    ws.onerror = (error) => {
-      if (!navigator.onLine) {
-        setDisconnectReason('Network Error');
-      } else if (wsUrl.includes('undefined')) {
-        setDisconnectReason('Invalid WebSocket Endpoint');
-      } else {
-        setDisconnectReason('Connection Refused');
-      }
-    };
-  }, [wsUrl, cleanupConnection]);
+    }, 5000);
+  }, [cleanupConnection]);
 
   const scheduleReconnect = useCallback((attempt: number) => {
     setReconnectAttempts(attempt);
