@@ -186,7 +186,7 @@ export const AIIntelligence: React.FC = () => {
           // Update summary counters on article events
           if (newEvent.type === 'ARTICLE_PUBLISHED' || newEvent.type === 'DRAFT_SAVED') {
             const isNew = newEvent.details?.isNew;
-            setSummary(prev => {
+            setSummary((prev: any) => {
               if (!prev) return prev;
               let publishedDiff = 0;
               let draftDiff = 0;
@@ -214,7 +214,7 @@ export const AIIntelligence: React.FC = () => {
 
           // Update average scores on audit completed
           if (newEvent.type === 'AUDIT_COMPLETED' && newEvent.details?.aiScore !== undefined) {
-            setSummary(prev => {
+            setSummary((prev: any) => {
               if (!prev) return prev;
               const aiScore = newEvent.details.aiScore;
               const visibilityScore = newEvent.details.visibilityScore || 0;
