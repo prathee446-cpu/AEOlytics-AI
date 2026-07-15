@@ -338,7 +338,7 @@ export async function radarRoutes(fastify: FastifyInstance) {
       let status = 'simulated';
       if (platformId === 'chatgpt' && env.OPENAI_API_KEY) status = 'online';
       else if (platformId === 'gemini' && env.GEMINI_API_KEY) status = 'online';
-      else if (platformId === 'claude' && env.XAI_API_KEY) status = 'online';
+      else if (platformId === 'claude' && env.GROQ_API_KEY) status = 'online';
 
       return {
         id: platformId,

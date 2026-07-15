@@ -20,7 +20,7 @@ export const Chat: React.FC = () => {
   const history = aiState.chatHistory || [];
   const loading = aiState.chatLoading || false;
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | 'all' | null>('all');
 
   // Reset chat history when selected article changes
   useEffect(() => {
@@ -45,7 +45,7 @@ export const Chat: React.FC = () => {
 
     try {
       const res = await api.post('/api/ai/chat', {
-        articleId: selectedId,
+        articleId: selectedId === 'all' ? null : selectedId,
         query: content,
         history: history.map(h => ({ role: h.role, content: h.content }))
       });

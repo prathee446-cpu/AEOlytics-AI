@@ -95,11 +95,11 @@ export async function reportRoutes(fastify: FastifyInstance) {
         }
       }
 
-      await AIActivityService.logEvent('REPORT_EXPORTED', `Exported PDF Audit Report for article: "${article.title}"`, {
-        articleId: article.id,
+      await AIActivityService.logEvent('REPORT_EXPORTED', `Exported PDF Audit Report for article: "${article!.title}"`, {
+        articleId: article!.id,
       });
 
-      const pdfBuffer = await PDFService.generateArticleReport(article);
+      const pdfBuffer = await PDFService.generateArticleReport(article!);
 
       reply
         .header('Content-Type', 'application/pdf')

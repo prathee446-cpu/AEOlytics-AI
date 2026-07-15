@@ -174,24 +174,30 @@ export async function aiRoutes(fastify: FastifyInstance) {
   fastify.post('/api/ai/chat', async (request, reply) => {
     const { articleId, query, history } = request.body as any;
 
-    if (!articleId || !query) {
-      return reply.status(400).send({ error: 'Scope article ID and chat prompt query are required' });
+    if (!query) {
+      return reply.status(400).send({ error: 'Chat prompt query is required' });
     }
 
     try {
-      const article = await prisma.article.findUnique({ where: { id: articleId } });
-      if (!article) {
-        return reply.status(404).send({ error: 'No website has been crawled yet.' });
-      }
+      let articleTitle = 'Global Workspace';
+      let articleContent = '';
 
-      if (!article.content || article.content.trim().length < 15) {
-        return reply.status(400).send({ error: 'No indexed content found.' });
+      if (articleId) {
+        const article = await prisma.article.findUnique({ where: { id: articleId } });
+        if (!article) {
+          return reply.status(404).send({ error: 'Article not found.' });
+        }
+        if (!article.content || article.content.trim().length < 15) {
+          return reply.status(400).send({ error: 'No indexed content found in this article.' });
+        }
+        articleTitle = article.title;
+        articleContent = article.content;
       }
 
       // Execute Chat with RAG context
-      const response = await AIService.chatWithContent(
-        article.title,
-        article.content,
+      const response = await AIService.chatWithWorkspaceRAG(
+        articleTitle,
+        articleContent,
         history || [],
         query
       );
@@ -205,7 +211,7 @@ export async function aiRoutes(fastify: FastifyInstance) {
       if (!session) {
         session = await prisma.chatSession.create({
           data: {
-            title: `Chat regarding: ${article.title}`,
+            title: articleId ? `Chat: ${articleTitle}` : 'Global Workspace Chat',
             userId: userPayload.id,
             articleId
           }

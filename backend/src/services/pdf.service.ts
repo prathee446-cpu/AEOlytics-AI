@@ -40,7 +40,7 @@ export class PDFService {
         // Background Circle
         doc.lineWidth(8);
         doc.strokeColor('#e2e8f0');
-        doc.arc(cx, cy, radius, 0, Math.PI * 2);
+        (doc as any).arc(cx, cy, radius, 0, Math.PI * 2);
         doc.stroke();
 
         // Foreground arc
@@ -49,7 +49,7 @@ export class PDFService {
           doc.strokeColor(color);
           const startAngle = -Math.PI / 2;
           const endAngle = startAngle + (score / 100) * Math.PI * 2;
-          doc.arc(cx, cy, radius, startAngle, endAngle);
+          (doc as any).arc(cx, cy, radius, startAngle, endAngle);
           doc.stroke();
         }
       };
@@ -140,7 +140,7 @@ export class PDFService {
       const perplexity = Math.round(sc.perplexity || article.aiScore - 5 || 70);
       const claude = Math.round(sc.claude || article.aiScore + 1 || 76);
       const copilot = Math.round(sc.copilot || article.aiScore - 2 || 73);
-      const grok = Math.round((chatgpt + claude) / 2 || 75);
+      const groq = Math.round((chatgpt + claude) / 2 || 75);
 
       const platformsMap = {
         'ChatGPT': chatgpt,
@@ -149,7 +149,7 @@ export class PDFService {
         'Perplexity': perplexity,
         'Claude': claude,
         'Microsoft Copilot': copilot,
-        'xAI Grok': grok,
+        'Groq (Llama 3.3)': groq,
       };
 
       const sortedPlatforms = Object.entries(platformsMap).sort((a, b) => b[1] - a[1]);
@@ -180,16 +180,16 @@ export class PDFService {
 
       doc.fillColor(cPrimary).fontSize(10).font('Helvetica-Bold').text('KEY RECOMMENDATION SUMMARY', 70, 255);
       
-      doc.fillColor(cBody).fontSize(9).font('Helvetica');
-      doc.text('Strengths:', 70, 280, { bold: true });
+      doc.fillColor(cBody).fontSize(9).font('Helvetica-Bold');
+      doc.text('Strengths:', 70, 280);
       doc.fillColor(cPrimary).font('Helvetica-Bold').text('Heading structure and text readability scores conform to LLM layout requirements. Crawlability flags are clear.', 130, 280, { width: 395 });
 
-      doc.fillColor(cBody).font('Helvetica');
-      doc.text('Weaknesses:', 70, 310, { bold: true });
+      doc.fillColor(cBody).font('Helvetica-Bold');
+      doc.text('Weaknesses:', 70, 310);
       doc.fillColor('#f59e0b').font('Helvetica-Bold').text('Structured schema tags (FAQ and Org metadata) are lacking. Outbound citations could be increased to back up claims.', 130, 310, { width: 395 });
 
-      doc.fillColor(cBody).font('Helvetica');
-      doc.text('AEO Directive:', 70, 340, { bold: true });
+      doc.fillColor(cBody).font('Helvetica-Bold');
+      doc.text('AEO Directive:', 70, 340);
       doc.fillColor(cAccent).font('Helvetica-Bold').text('Prioritize structured FAQ lists to increase citation frequency inside Gemini and ChatGPT Search summaries.', 130, 340, { width: 395 });
 
       // Core Content Statistics
@@ -257,7 +257,7 @@ export class PDFService {
         { label: 'PPX', score: perplexity, color: '#f59e0b' },
         { label: 'CLD', score: claude, color: '#ec4899' },
         { label: 'COP', score: copilot, color: '#8b5cf6' },
-        { label: 'GROK', score: grok, color: '#14b8a6' },
+        { label: 'GROQ', score: groq, color: '#14b8a6' },
       ];
 
       bars.forEach((bar, bIdx) => {

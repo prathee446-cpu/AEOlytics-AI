@@ -1,12 +1,10 @@
 import OpenAI from 'openai';
+import Groq from 'groq-sdk';
 import { env } from '../config/env';
+import { VectorService } from './vector.service';
 
-// Initialize xAI API client if key is available
-const xai = env.XAI_API_KEY ? new OpenAI({
-  apiKey: env.XAI_API_KEY,
-  baseURL: 'https://api.x.ai/v1',
-  timeout: 20000,
-}) : null;
+// Initialize Groq API client if key is available
+const groqClient = env.GROQ_API_KEY ? new Groq({ apiKey: env.GROQ_API_KEY, timeout: 20000 }) : null;
 
 // Initialize OpenAI API client if key is available
 const openai = env.OPENAI_API_KEY ? new OpenAI({
@@ -23,7 +21,7 @@ const gemini = env.GEMINI_API_KEY ? new OpenAI({
 
 // Determine active provider
 const getAIProvider = () => {
-  if (xai) return 'grok';
+  if (groqClient) return 'groq';
   if (openai) return 'openai';
   if (gemini) return 'gemini';
   return 'simulation';
@@ -39,11 +37,11 @@ export class AIService {
     const provider = getAIProvider();
 
     try {
-      if (provider === 'grok') {
-        console.warn(`[xAI Service] xAI (Grok) API does not support raw text embedding generation. Falling back to stable simulation embeddings.`);
+      if (provider === 'groq') {
+        console.warn(`[Groq Service] Groq API does not support raw text embedding generation. Falling back to stable simulation embeddings.`);
       }
     } catch (error) {
-      console.error(`[xAI Service] Embedding configuration check failed. Falling back to simulation.`, error);
+      console.error(`[Groq Service] Embedding configuration check failed. Falling back to simulation.`, error);
     }
 
     // Simulation Fallback: Hash-based stable embedding generator
@@ -93,11 +91,11 @@ Respond ONLY with a JSON object in this format:
 
     const userPrompt = `Title: ${title}\nContent:\n${content}`;
 
-    if (provider === 'grok' && xai) {
+    if (provider === 'groq' && groqClient) {
       try {
-        console.log(`[xAI Service] Requesting analyzeContent from Grok API using model grok-latest...`);
-        const result = await xai.chat.completions.create({
-          model: 'grok-latest',
+        console.log(`[Groq Service] Requesting analyzeContent from Groq API using model grok-latest...`);
+        const result = await groqClient.chat.completions.create({
+          model: 'llama-3.3-70b-versatile',
           response_format: { type: 'json_object' },
           messages: [
             { role: 'system', content: systemPrompt },
@@ -111,7 +109,7 @@ Respond ONLY with a JSON object in this format:
           return parsed;
         }
       } catch (error) {
-        console.error('[xAI Service] Real AI Analysis failed. Using simulation fallback.', error);
+        console.error('[Groq Service] Real AI Analysis failed. Using simulation fallback.', error);
       }
     }
 
@@ -142,11 +140,11 @@ Respond ONLY with a JSON object in this format:
 
     const userPrompt = `Title: ${title}\nContent:\n${content}`;
 
-    if (provider === 'grok' && xai) {
+    if (provider === 'groq' && groqClient) {
       try {
-        console.log(`[xAI Service] Requesting predictVisibility from Grok API using model grok-latest...`);
-        const result = await xai.chat.completions.create({
-          model: 'grok-latest',
+        console.log(`[Groq Service] Requesting predictVisibility from Groq API using model grok-latest...`);
+        const result = await groqClient.chat.completions.create({
+          model: 'llama-3.3-70b-versatile',
           response_format: { type: 'json_object' },
           messages: [
             { role: 'system', content: systemPrompt },
@@ -160,7 +158,7 @@ Respond ONLY with a JSON object in this format:
           return parsed;
         }
       } catch (error) {
-        console.error('[xAI Service] Real AI Visibility prediction failed. Using simulation.', error);
+        console.error('[Groq Service] Real AI Visibility prediction failed. Using simulation.', error);
       }
     }
 
@@ -200,11 +198,11 @@ Request: ${optimizationRequest}`;
 
     const userPrompt = `Title: ${title}\nContent:\n${content}`;
 
-    if (provider === 'grok' && xai) {
+    if (provider === 'groq' && groqClient) {
       try {
-        console.log(`[xAI Service] Requesting optimizeContent (${action}) from Grok API using model grok-latest...`);
-        const result = await xai.chat.completions.create({
-          model: 'grok-latest',
+        console.log(`[Groq Service] Requesting optimizeContent (${action}) from Groq API using model grok-latest...`);
+        const result = await groqClient.chat.completions.create({
+          model: 'llama-3.3-70b-versatile',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },
@@ -216,7 +214,7 @@ Request: ${optimizationRequest}`;
           return textResult.trim();
         }
       } catch (error) {
-        console.error('[xAI Service] Real AI Optimization failed. Using simulation.', error);
+        console.error('[Groq Service] Real AI Optimization failed. Using simulation.', error);
       }
     }
 
@@ -266,9 +264,9 @@ Request: ${optimizationRequest}`;
   }
 
   /**
-   * Chat with single article content (RAG Context)
+   * Chat with Workspace Content (RAG Context)
    */
-  static async chatWithContent(
+  static async chatWithWorkspaceRAG(
     articleTitle: string,
     articleContent: string,
     chatHistory: Array<{ role: string; content: string }>,
@@ -277,29 +275,53 @@ Request: ${optimizationRequest}`;
     const provider = getAIProvider();
 
     if (provider === 'simulation') {
-      console.warn('[RAG Pipeline LOG] No AI provider configured. Using simulated chat response.');
-      return this.generateSimulatedChatResponse(articleTitle, articleContent, userQuery);
+      console.warn('[RAG Pipeline LOG] No AI provider configured. Falling back to extractive RAG.');
     }
 
-    // Retrieve context sections
-    const relevantContext = this.retrieveRelevantContext(articleContent, userQuery);
-    console.log('[RAG Pipeline LOG] Context retrieved successfully. Selected chunks content size:', relevantContext.length);
+    let finalContext = '';
+    
+    if (articleContent.trim().length > 0) {
+      // Scoped to a single article
+      finalContext = `[Source: ${articleTitle}]\n` + this.retrieveRelevantContext(articleContent, userQuery);
+      console.log('[RAG Pipeline LOG] Scoped context retrieved. Selected chunks size:', finalContext.length);
+    } else {
+      // Global Workspace RAG
+      const queryEmbedding = await this.generateEmbedding(userQuery);
+      const topArticles = await VectorService.searchArticles(queryEmbedding, 3);
+      
+      if (topArticles.length === 0) {
+        throw new Error('No indexed content found in your workspace to answer this question.');
+      }
+      
+      // Extract relevant chunks from each retrieved article
+      const contextChunks = topArticles.map(art => {
+        const chunks = this.retrieveRelevantContext(art.content, userQuery);
+        return `[Source: ${art.title}]\n${chunks}`;
+      });
+      
+      finalContext = contextChunks.join('\n\n---\n\n');
+      console.log(`[RAG Pipeline LOG] Global context retrieved from ${topArticles.length} articles. Total size: ${finalContext.length}`);
+    }
 
-    const systemPrompt = `You are ContentIQ Chatbot, an expert AI analyst. 
-You are chatting with a user about their website article: "${articleTitle}".
+    if (!finalContext.trim()) {
+       return "I couldn't find relevant information in your indexed content. Try uploading additional content or ask a different question.";
+    }
+
+    const systemPrompt = `You are ContentIQ Chatbot, an expert AI assistant.
+You are helping a user by answering their questions using ONLY their indexed workspace content.
 
 Strict Instructions:
-1. You must answer questions based ONLY on the content crawled from the user's website provided below in the ARTICLE CONTENT section.
-2. Do NOT use your general knowledge if the requested information is not available in the provided article content.
-3. If the answer is not present or cannot be directly inferred from the provided article content, you MUST respond exactly with:
-"I couldn't find this information in the current website content."
-Do not make up any information or answer using general knowledge in this case.
-4. Ground your answers in the crawled content. Whenever possible, indicate which heading, section, or paragraph of the crawled website was used to generate the answer.
-5. Keep your responses concise, structured, helpful, and formatted in Markdown.
+1. You must answer questions based ONLY on the provided Context below.
+2. Do NOT use your general knowledge if the requested information is not available in the Context.
+3. If the answer cannot be found in the Context, you MUST respond exactly with:
+"I couldn't find relevant information in your indexed content. Try uploading additional content or ask a different question."
+4. Do not make up or hallucinate any information.
+5. Whenever you use information, you MUST cite the source using the provided [Source: <Title>] tags.
+6. Format your response cleanly in Markdown.
 
 ---
-ARTICLE CONTENT:
-${relevantContext}
+CONTEXT:
+${finalContext}
 ---`;
 
     const formattedMessages = chatHistory.map(h => ({
@@ -307,12 +329,12 @@ ${relevantContext}
       content: h.content,
     }));
 
-    let client: OpenAI | null = null;
+    let client: any = null;
     let model = '';
 
-    if (provider === 'grok' && xai) {
-      client = xai;
-      model = 'grok-latest';
+    if (provider === 'groq' && groqClient) {
+      client = groqClient;
+      model = 'llama-3.3-70b-versatile';
     } else if (provider === 'openai' && openai) {
       client = openai;
       model = 'gpt-4o-mini';
@@ -321,12 +343,12 @@ ${relevantContext}
       model = 'gemini-2.5-flash';
     }
 
-    if (!client) {
-      throw new Error(`AI Client initialization failed for provider: ${provider}`);
+    if (!client || provider === 'simulation') {
+      return `*(Fallback Mode: No AI API Key)*\n\nI couldn't generate a conversational response because no valid AI API keys (OpenAI/Groq/Gemini) are configured. Please check your .env configuration.`;
     }
 
     try {
-      console.log('[RAG Pipeline LOG] Dispatching chat request to LLM using model:', model);
+      console.log('[RAG Pipeline LOG] Dispatching workspace RAG request to LLM using model:', model);
       
       const result = await client.chat.completions.create({
         model,
@@ -342,11 +364,13 @@ ${relevantContext}
         throw new Error('Received empty response from the AI provider.');
       }
 
-      console.log('[RAG Pipeline LOG] Grok/LLM response received successfully. Length:', replyText.trim().length);
       return replyText.trim();
-    } catch (error) {
-      console.error('[RAG Pipeline ERROR] Real AI Chat failed. Using simulation fallback.', error);
-      return this.generateSimulatedChatResponse(articleTitle, articleContent, userQuery);
+    } catch (error: any) {
+      console.error('[RAG Pipeline ERROR] Real AI Chat failed.', error);
+      if (error.status === 401 || error.status === 403 || error.status === 429) {
+        return `*(API Error)*\n\nI am unable to generate a response right now due to an AI API authorization or quota error (${error.message}). Please check your API credits and try again.`;
+      }
+      return `*(API Error)*\n\nAn unexpected error occurred while communicating with the AI API. Please try again later.`;
     }
   }
 
@@ -364,11 +388,11 @@ If the referenced sources do not contain the answer, say that you couldn't find 
 
     const userPrompt = `Query: ${query}\n\nSources:\n${contextStr || 'No relevant articles found in the database.'}`;
 
-    if (provider === 'grok' && xai) {
+    if (provider === 'groq' && groqClient) {
       try {
-        console.log(`[xAI Service] Requesting searchAnswer from Grok API using model grok-latest...`);
-        const result = await xai.chat.completions.create({
-          model: 'grok-latest',
+        console.log(`[Groq Service] Requesting searchAnswer from Groq API using model grok-latest...`);
+        const result = await groqClient.chat.completions.create({
+          model: 'llama-3.3-70b-versatile',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },
@@ -379,12 +403,12 @@ If the referenced sources do not contain the answer, say that you couldn't find 
           return textResult.trim();
         }
       } catch (error) {
-        console.error('[xAI Service] Real AI Search answer failed. Using simulation.', error);
+        console.error('[Groq Service] Real AI Search answer failed. Using simulation.', error);
       }
     }
 
-    // Simulation Fallback
-    return this.generateSimulatedSearchAnswer(query, referencedArticles);
+    // No fallback, just throw error
+    throw new Error('A valid AI provider API key is required to generate a search answer.');
   }
 
   // --- HELPERS & SIMULATORS ---
@@ -707,98 +731,7 @@ H1, H2, and H3 headers serve as semantic indicators. Structuring headings as dir
     }
   }
 
-  private static generateSimulatedChatResponse(title: string, content: string, query: string): string {
-    const lowercaseQuery = query.toLowerCase();
-    const lowercaseContent = (content || '').toLowerCase();
-    const lowercaseTitle = (title || '').toLowerCase();
 
-    // Check if query is related to the content or common features
-    const commonTopics = [
-      'summarize', 'summary', 'faq', 'question', 'readability', 'keywords', 
-      'topics', 'improve', 'heading', 'title', 'meta', 'takeaway', 'point', 
-      'service', 'main topic', 'weak', 'seo', 'aeo', 'simple'
-    ];
-    const hasTopic = commonTopics.some(topic => lowercaseQuery.includes(topic));
-    
-    const queryWords = lowercaseQuery.split(/\s+/).filter(w => w.length > 3);
-    const hasWordOverlap = queryWords.some(word => lowercaseContent.includes(word) || lowercaseTitle.includes(word));
-
-    if (!hasTopic && !hasWordOverlap) {
-      return `This information is not available in the current website content.`;
-    }
-
-    if (lowercaseQuery.includes('summarize') || lowercaseQuery.includes('summary') || lowercaseQuery.includes('main topic')) {
-      return `### Content Summary: **${title}**
-
-Based on the crawled website content of **${title}**:
-* **Main Core Topic**: The document discusses digital marketing, optimization methodologies, and pathways to align written content with AI semantic crawl patterns.
-* **Key Observations**: Structuring pages clearly, improving readability indexes, and answering intent directly.
-* **Source Reference**: Extracted from the main body content of the webpage.`;
-    }
-
-    if (lowercaseQuery.includes('faq') || lowercaseQuery.includes('frequently asked') || lowercaseQuery.includes('question')) {
-      return `### Suggested FAQs for: **${title}**
-
-Based on the crawled website content:
-* **Q: What is the main thesis outlined in this page?**
-  * *A*: The page details strategies to improve visibility in conversational engine results. (Source: Introduction paragraph)
-* **Q: Which key sections are highlighted for improvements?**
-  * *A*: Formatting layout headers, increasing paragraph readability, and resolving missing semantic key phrases. (Source: Body analysis)`;
-    }
-
-    if (lowercaseQuery.includes('key point') || lowercaseQuery.includes('takeaway') || lowercaseQuery.includes('service')) {
-      return `### Key Points & Services Identified
-      
-Based on the crawled website content of **${title}**:
-1. **Semantic Accessibility**: Organizing content logically with clear headings (Source: Heading section).
-2. **Direct Answerability**: Providing immediate answers to user questions to win featured snippets (Source: Introduction).
-3. **Keyword Density**: Addressing topic gaps by incorporating key conversational phrases naturally.`;
-    }
-
-    if (lowercaseQuery.includes('title') || lowercaseQuery.includes('meta description')) {
-      return `### Meta Recommendations for: **${title}**
-
-Based on the crawled website content:
-* **Suggested Title**: "How to Optimize Content for AI Search Engines - A Complete Guide"
-* **Suggested Meta Description**: "Learn the key strategies, heading structures, and semantic keywords needed to make your content discoverable by conversational AI engines like ChatGPT, Gemini, and Perplexity." (Source: Grounded in Title and Intro Analysis)`;
-    }
-
-    if (lowercaseQuery.includes('improve') || lowercaseQuery.includes('readability') || lowercaseQuery.includes('weak') || lowercaseQuery.includes('heading') || lowercaseQuery.includes('keyword') || lowercaseQuery.includes('topic') || lowercaseQuery.includes('seo') || lowercaseQuery.includes('aeo') || lowercaseQuery.includes('simple')) {
-      return `### Optimization Checklist for: **${title}**
-
-Based on the crawled website content:
-* **Heading Improvement**: Rewrite section headings into conversational questions to improve answer intent recognition.
-* **Readability Audit**: Simplify complex sentences and break up long paragraphs (Source: Body paragraphs).
-* **Missing Keywords**: Focus on semantic phrases like "conversational search optimization" and "AEO indexation criteria" (Source: Gap Analysis).`;
-    }
-
-    return `Based on the crawled website content of **"${title}"**:
-
-The document outlines key details regarding ${title}. Grounded in the main body content, we recommend:
-* Structuring descriptions to answer queries directly.
-* Eliminating fluff to improve overall flow.
-* Using bullet points to break up lists.
-
-(Source: Grounded in crawled page body content)`;
-  }
-
-  private static generateSimulatedSearchAnswer(query: string, articles: Array<{ title: string; content: string }>): string {
-    if (articles.length === 0) {
-      return `I searched your ContentIQ library for: **"${query}"** but couldn't find any relevant articles.
-
-To begin indexing, please add articles in the **Content Library** and make sure their status is set to **Published** so they are indexed into the search database.`;
-    }
-
-    const referencesStr = articles.map((a, i) => `[Source ${i + 1}] (${a.title})`).join(', ');
-
-    return `Based on search results in your library (analyzing ${referencesStr}):
-
-1. The systems index content by assessing title relevance and vocabulary mapping. ContentIQ analyzes readability and provides optimization scores for each.
-2. In **${articles[0].title}**, the article outlines guidelines for structure, semantic coverage, and headers.
-3. Furthermore, AI readiness requires matching user questions directly inside headings.
-
-*Reference: ${articles.map((a, i) => `[Source ${i + 1}]: ${a.title}`).join('; ')}*`;
-  }
 
   private static extractRelevantSection(content: string, issueTitle: string): string {
     const paragraphs = content.split('\n\n').map(p => p.trim()).filter(Boolean);
@@ -911,11 +844,11 @@ IMPORTANT:
 
     const userPrompt = `Current Section:\n${currentSection || '[Empty / Section is missing]'}`;
 
-    if (provider === 'grok' && xai) {
+    if (provider === 'groq' && groqClient) {
       try {
-        console.log(`[xAI Service] Requesting rewriteSectionForIssue from Grok API using model grok-latest...`);
-        const result = await xai.chat.completions.create({
-          model: 'grok-latest',
+        console.log(`[Groq Service] Requesting rewriteSectionForIssue from Groq API using model grok-latest...`);
+        const result = await groqClient.chat.completions.create({
+          model: 'llama-3.3-70b-versatile',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },
@@ -930,7 +863,7 @@ IMPORTANT:
           };
         }
       } catch (error) {
-        console.error('[xAI Service] Real AI section rewrite failed. Using simulation fallback.', error);
+        console.error('[Groq Service] Real AI section rewrite failed. Using simulation fallback.', error);
       }
     }
 
@@ -1017,9 +950,9 @@ Example output:
     const userPrompt = `Website Domain: ${domain}\nWebsite Title: ${title}\nContent Summary:\n${content.substring(0, 2000)}`;
 
     if (provider !== 'simulation') {
-      let client: OpenAI | null = null;
+      let client: any = null;
       let model = '';
-      if (provider === 'grok' && xai) { client = xai; model = 'grok-latest'; }
+      if (provider === 'groq' && groqClient) { client = groqClient; model = 'llama-3.3-70b-versatile'; }
       else if (provider === 'openai' && openai) { client = openai; model = 'gpt-4o-mini'; }
       else if (provider === 'gemini' && gemini) { client = gemini; model = 'gemini-2.5-flash'; }
 
@@ -1073,9 +1006,9 @@ Example output:
     let llmResponse = '';
 
     if (provider !== 'simulation') {
-      let client: OpenAI | null = null;
+      let client: any = null;
       let model = '';
-      if (provider === 'grok' && xai) { client = xai; model = 'grok-latest'; }
+      if (provider === 'groq' && groqClient) { client = groqClient; model = 'llama-3.3-70b-versatile'; }
       else if (provider === 'openai' && openai) { client = openai; model = 'gpt-4o-mini'; }
       else if (provider === 'gemini' && gemini) { client = gemini; model = 'gemini-2.5-flash'; }
 
@@ -1218,9 +1151,9 @@ Example output:
     let responseExcerpt = '';
 
     if (provider !== 'simulation') {
-      let client: OpenAI | null = null;
+      let client: any = null;
       let model = '';
-      if (provider === 'grok' && xai) { client = xai; model = 'grok-latest'; }
+      if (provider === 'groq' && groqClient) { client = groqClient; model = 'llama-3.3-70b-versatile'; }
       else if (provider === 'openai' && openai) { client = openai; model = 'gpt-4o-mini'; }
       else if (provider === 'gemini' && gemini) { client = gemini; model = 'gemini-2.5-flash'; }
 
@@ -1334,9 +1267,9 @@ Example output:
     const topCompetitor = Array.from(topCompetitors.entries()).sort((a, b) => b[1] - a[1])[0];
 
     if (provider !== 'simulation') {
-      let client: OpenAI | null = null;
+      let client: any = null;
       let model = '';
-      if (provider === 'grok' && xai) { client = xai; model = 'grok-latest'; }
+      if (provider === 'groq' && groqClient) { client = groqClient; model = 'llama-3.3-70b-versatile'; }
       else if (provider === 'openai' && openai) { client = openai; model = 'gpt-4o-mini'; }
       else if (provider === 'gemini' && gemini) { client = gemini; model = 'gemini-2.5-flash'; }
 

@@ -9,7 +9,7 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(8),
   GEMINI_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
-  XAI_API_KEY: z.string().optional(),
+  GROQ_API_KEY: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
