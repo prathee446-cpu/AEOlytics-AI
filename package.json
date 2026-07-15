@@ -1,0 +1,21 @@
+{
+  "name": "aeolytics-ai",
+  "version": "1.0.0",
+  "scripts": {
+    "build:frontend": "npm run build --prefix frontend",
+    "build:backend": "npm run build --prefix backend",
+    "start": "npm run build:frontend && npm run build:backend && cross-env NODE_ENV=production npm run start --prefix backend",
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev:backend": "cross-env NODE_ENV=development npm run dev --prefix backend"
+  },
+  "dependencies": {
+    "@prisma/client": "^7.8.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.3",
+    "cross-env": "^10.1.0"
+  }
+}
