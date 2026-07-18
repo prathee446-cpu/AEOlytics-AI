@@ -17,7 +17,17 @@ function useLiveRadarStream() {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:5000/ws/ai-intelligence';
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let wsHost = window.location.host;
+    if (import.meta.env.VITE_API_URL) {
+      try {
+        const url = new URL(import.meta.env.VITE_API_URL);
+        wsHost = url.host;
+      } catch(e) {}
+    } else if (import.meta.env.MODE === 'development') {
+      wsHost = 'localhost:5000';
+    }
+    const wsUrl = import.meta.env.VITE_WS_URL || `${protocol}//${wsHost}/ws/ai-intelligence`;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => setConnected(true);
